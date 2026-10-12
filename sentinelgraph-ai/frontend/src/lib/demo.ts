@@ -40,7 +40,18 @@ export function demoAnalysis(input: string, id = `DEMO-${Date.now()}`, createdAt
   if (mimic) evidence.push({ruleId:'DEMO_BRAND_RESEMBLANCE',title:'Brand-name resemblance',description:`The domain contains a name resembling ${claimedBrand}, but differs from ${referenceDomain}. A different domain alone does not prove impersonation.`,source:'Deterministic demo rule',kind:'warning',observedAt:createdAt})
   if (/login|secure|auth|bonus|reward|verify|update/i.test(hostname)) evidence.push({ruleId:'SENSITIVE_WORDS',title:'Attention-worthy domain wording',description:'The domain contains sign-in, verification, or promotional wording that can warrant investigation when combined with other evidence.',source:'Deterministic demo rule',kind:'warning',observedAt:createdAt})
   if (!match) evidence.push({ruleId:'NO_REFERENCE',title:'No reference available',description:'No matching brand was found in this small fictional demonstration catalog.',source:'Seeded demonstration catalog',kind:'neutral',observedAt:createdAt})
-  return {id,submittedUrl:`${parsed.protocol}//${hostname}${parsed.pathname}`,normalizedUrl:`${parsed.protocol}//${hostname}${parsed.pathname}`,hostname,registrableDomain,claimedBrand,referenceDomain,verdict,threatStatus:'NOT_CHECKED',score:null,analysisMode:'DEMO_LOCAL_ONLY',evidence,limitations:['Fictional demonstration catalog; no real-world official ownership verification.','No external threat intelligence or DNS/RDAP lookup was performed.','Website content and redirects were not inspected.','Browser demo domain parsing does not cover all public suffixes.'],createdAt}
+  // Local demo uses a deliberately simple heuristic, not live reputation data.
+  let score = mimic ? 55 : 0
+  if (/login|secure|auth|bonus|reward|verify|update/i.test(hostname)) score += 15
+  if (/^(com|net|org|co|io)\./i.test(hostname)) score += 35
+  if (parsed.protocol === 'http:') score += 10
+  if (hostname.includes('xn--')) score += 15
+  if (/verify-password|send-otp|password-reset|claim-reward/i.test(parsed.pathname)) score += 15
+  score = exact ? 0 : Math.min(100, score)
+  if (mimic && score >= 90) verdict = 'LIKELY_IMPERSONATION'
+  else if (mimic || score >= 35) verdict = 'SUSPICIOUS'
+  evidence.push({ruleId:'DEMO_RISK_SCORE',title:`Heuristic URL risk score: ${score}/100`,description:'Calculated only from demo URL text rules. Not a fraud probability or safety verification.',source:'Local demo rules',kind:score>=35?'warning':'neutral',observedAt:createdAt})
+  return {id,submittedUrl:`${parsed.protocol}//${hostname}${parsed.pathname}`,normalizedUrl:`${parsed.protocol}//${hostname}${parsed.pathname}`,hostname,registrableDomain,claimedBrand,referenceDomain,verdict,threatStatus:'NOT_CHECKED',score,analysisMode:'DEMO_LOCAL_ONLY',evidence,limitations:['Fictional demonstration catalog; no real-world official ownership verification.','No external threat intelligence or DNS/RDAP lookup was performed.','Website content and redirects were not inspected.','Browser demo domain parsing does not cover all public suffixes.'],createdAt}
 }
 function read<T>(key:string,fallback:T):T { try { const raw=localStorage.getItem(key);return raw?JSON.parse(raw) as T:fallback } catch {return fallback} }
 function write<T>(key:string,data:T){localStorage.setItem(key,JSON.stringify(data))}

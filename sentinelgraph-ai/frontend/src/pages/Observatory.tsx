@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { Activity, BarChart3, CheckCircle2, Search, ShieldCheck, ShieldAlert } from 'lucide-react'
 import { ConsoleShell } from '../components/UI'
+import RiskGauge from '../components/RiskGauge'
 import { obs, type RecordData } from '../lib/observatory'
 
 type AnalysisResult = {
@@ -28,16 +29,12 @@ function Field({ label, value, onChange, required = false, placeholder = '' }: {
 }
 function ScorePanel({ result }: { result: AnalysisResult }) {
   const risk = result.risk
-  const score = Number(risk.score) || 0
-  const concern = score >= 35
-  const official = risk.verdict === 'SUPPLIED_OFFICIAL_ASSET_MATCH'
+  const score = risk.score
+  const concern = score >= 35 || ['SUSPICIOUS', 'LIKELY_IMPERSONATION'].includes(risk.verdict)
   return <div className={`obs-score-panel ${concern ? 'obs-high' : 'obs-uncertain'}`} role="status">
     <div className="obs-score-head"><ShieldAlert size={24}/><span>Current risk analysis</span></div>
-    <div className="obs-score-main"><strong>{score}<small>/100</small></strong><div>
-      <h3>{official ? 'Registered reference match — not independently verified' : concern ? 'Potentially risky' : 'Insufficient evidence to confirm safety'}</h3>
-      <p>{result.name} · {result.platform}</p>
-    </div></div>
-    <div className="obs-meter"><span style={{ width: `${Math.max(2, Math.min(100, score))}%` }}/></div>
+    <RiskGauge score={score} verdict={risk.verdict}/>
+    <p className="obs-score-identity"><strong>{result.name}</strong> · {result.platform}</p>
     <p><strong>Reference comparison:</strong> {result.matchedBrand}</p>
     <p><strong>Submitted URL:</strong> {result.sourceUrl}</p>
     {risk.signals?.length > 0 ? <div className="obs-signal-list"><h4>Why this score?</h4>{risk.signals.map((signal, i) => <div key={i}><span>{signal.signal}</span><b>+{signal.points}</b></div>)}</div> : <p>No definite warning indicators were detected from the supplied information.</p>}
