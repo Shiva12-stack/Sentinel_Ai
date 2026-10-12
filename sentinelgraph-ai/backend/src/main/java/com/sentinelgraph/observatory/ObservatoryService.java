@@ -28,24 +28,49 @@ public class ObservatoryService {
  private String text(Map<String,Object> m,String field){Object v=m.get(field);return v==null?"":v.toString().trim();}
  private String required(Map<String,Object> m,String field){String v=text(m,field);if(v.isBlank()||v.length()>250)throw bad(field+" is required (maximum 250 characters)",HttpStatus.BAD_REQUEST);return v;}
  private void url(String s){try{URI u=URI.create(s);if(!List.of("http","https").contains(u.getScheme())||u.getHost()==null||u.getUserInfo()!=null)throw new IllegalArgumentException();}catch(Exception e){throw bad("Use an HTTP(S) source URL without credentials",HttpStatus.BAD_REQUEST);}}
- public Map<String,Object> brand(Map<String,Object> input){Map<String,Object> b=new LinkedHashMap<>();b.put("name",required(input,"name"));b.put("createdAt",now());b.put("provenance","USER");return put(id("BRAND"),"brand",false,b);}
- public Map<String,Object> asset(Map<String,Object> input){String brandId=required(input,"brandId");get(brandId,"brand");String source=required(input,"sourceUrl");url(source);String platform=required(input,"platform");String identifier=required(input,"identifier");
-  if(list("asset").stream().anyMatch(a->brandId.equals(a.get("brandId"))&&platform.equals(a.get("platform"))&&identifier.equals(a.get("identifier"))))throw bad("Official asset already exists",HttpStatus.CONFLICT);
+ public Map<String,Object> brand(Map<String,Object> input){String name=required(input,"name");List<Map<String,Object>> existing=list("brand").stream().filter(b->name.equalsIgnoreCase(text(b,"name"))).toList();if(existing.size()==1)return existing.get(0);if(existing.size()>1)throw bad("Multiple registered brands share this name; contact the administrator",HttpStatus.CONFLICT);Map<String,Object> b=new LinkedHashMap<>();b.put("name",name);b.put("createdAt",now());b.put("provenance","USER");return put(id("BRAND"),"brand",false,b);}
+ public Map<String,Object> asset(Map<String,Object> input){String brandId=text(input,"brandId");
+  if(brandId.isBlank()){
+   String lookup=required(input,"brandName");
+   List<Map<String,Object>> matching=list("brand").stream().filter(b->lookup.equalsIgnoreCase(text(b,"name"))).toList();
+   if(matching.size()!=1)throw bad("Enter the exact name of one registered brand",HttpStatus.BAD_REQUEST);
+   brandId=text(matching.get(0),"id");
+  }
+  get(brandId,"brand");String source=required(input,"sourceUrl");url(source);String platform=required(input,"platform");String identifier=required(input,"identifier");
+  final String finalBrandId=brandId;
+  if(list("asset").stream().anyMatch(a->finalBrandId.equals(a.get("brandId"))&&platform.equals(a.get("platform"))&&identifier.equals(a.get("identifier"))))throw bad("Official asset already exists",HttpStatus.CONFLICT);
   Map<String,Object> a=new LinkedHashMap<>();for(String f:List.of("name","username","logo","description","publisher"))a.put(f,text(input,f));a.putAll(Map.of("brandId",brandId,"platform",platform,"identifier",identifier,"sourceUrl",source,"createdAt",now(),"provenance","USER"));return put(id("ASSET"),"asset",false,a);
  }
  public Map<String,Object> test(Map<String,Object> input){String brand=required(input,"brandName"),candidate=required(input,"candidateName");Map<String,Object> result=new LinkedHashMap<>(Similarity.compare(brand,candidate));
   boolean exact=list("asset").stream().anyMatch(a->brand.equalsIgnoreCase(String.valueOf(get(String.valueOf(a.get("brandId")),"brand").get("name")))&&text(input,"platform").equals(a.get("platform"))&&text(input,"identifier").equals(a.get("identifier"))&&!text(input,"identifier").isEmpty());
   result.put("mode","MANUAL_TEST — not a monitoring result");result.put("officialExcluded",exact);result.put("safeguards",List.of("Official exclusion requires matching platform and stable identifier","Short names (<4 normalized characters) require extra evidence","Name similarity is a candidate signal, not proof of maliciousness","No record or finding is created by a manual test"));return result;
  }
- private Map<String,Object> risk(Map<String,Object> c){Map<String,Object> brand=get(text(c,"brandId"),"brand");Map<String,Object> sim=Similarity.compare(text(brand,"name"),text(c,"name"));boolean excluded=list("asset").stream().anyMatch(a->text(c,"brandId").equals(a.get("brandId"))&&text(c,"platform").equals(a.get("platform"))&&text(c,"identifier").equals(a.get("identifier")));
+ private Map<String,Object> risk(Map<String,Object> c){Map<String,Object> brand=get(text(c,"brandId"),"brand");Map<String,Object> sim=Similarity.compare(text(brand,"name"),text(c,"name"));boolean excluded=list("asset").stream().anyMatch(a->text(c,"brandId").equals(a.get("brandId"))&&text(c,"platform").equals(a.get("platform"))&&(text(c,"identifier").equals(a.get("identifier"))||text(c,"sourceUrl").replaceAll("/+$","").equalsIgnoreCase(text(a,"sourceUrl").replaceAll("/+$",""))));
   List<Map<String,Object>> signals=new ArrayList<>();double similarity=((Number)sim.get("similarity")).doubleValue();boolean added=Boolean.TRUE.equals(sim.get("addedWords"));int score=0;
   if(Similarity.normalize(text(brand,"name")).length()>=4&&(similarity>=70||added)){int points=(int)Math.round(40*(added?Math.max(similarity,80):similarity)/100);score+=points;signals.add(Map.of("signal","Name resemblance","points",points,"detail",sim));}
   List<Map<String,Object>> assets=list("asset").stream().filter(a->text(c,"brandId").equals(a.get("brandId"))).toList();
   String logo=text(c,"logo");if(!logo.isEmpty()&&assets.stream().anyMatch(a->logo.equals(a.get("logo")))){score+=25;signals.add(Map.of("signal","Exact supplied logo URL match","points",25,"detail","URL equality; image-content similarity was not performed"));}
   if(text(c,"description").toLowerCase(Locale.ROOT).matches(".*(verify password|send otp|claim reward|urgent payment).*")){score+=25;signals.add(Map.of("signal","Explicit credential/reward/payment language","points",25,"detail",text(c,"description")));}
   String publisher=text(c,"publisher");if(!publisher.isEmpty()&&assets.stream().anyMatch(a->text(c,"platform").equals(a.get("platform"))&&!text(a,"publisher").isEmpty()&&!publisher.equalsIgnoreCase(text(a,"publisher")))){score+=10;signals.add(Map.of("signal","Publisher differs from supplied official reference","points",10,"detail",publisher));}
+  String profileText=(text(c,"name")+" "+text(c,"username")+" "+text(c,"sourceUrl")).toLowerCase(Locale.ROOT);
+  if(!excluded&&profileText.matches(".*(free[-_ ]?coupon|claim[-_ ]?(reward|prize)|free[-_ ]?gift|verify[-_ ]?account|secure[-_ ]?login).*")){
+   score+=20;signals.add(Map.of("signal","Promotional or verification wording in supplied identity/URL","points",20,"detail","Metadata indicator only; not a live verification"));
+  }
+  score=Math.min(100,score);
   if(excluded)score=0;
-  return Map.of("score",score,"officialExcluded",excluded,"signals",signals,"formula","name ≤40 + exact supplied logo URL 25 + explicit scam language 25 + app publisher mismatch 10; official stable-ID match => 0","missing",List.of("Image-content logo analysis","Account ownership verification","Live source verification"));
+  String verdict=excluded?"SUPPLIED_OFFICIAL_ASSET_MATCH":score>=70?"LIKELY_IMPERSONATION":score>=35?"SUSPICIOUS":"INCONCLUSIVE";
+  String level=excluded?"REFERENCE_MATCH_UNVERIFIED":score>=70?"HIGH":score>=35?"MEDIUM":"LOW";
+  String safety=excluded?"REFERENCE_MATCH_NOT_SAFETY_PROOF":score>=35?"POTENTIAL_RISK":"INSUFFICIENT_EVIDENCE_TO_DECLARE_SAFE";
+  Map<String,Object> assessment=new LinkedHashMap<>();
+  assessment.put("score",score);
+  assessment.put("verdict",verdict);
+  assessment.put("riskLevel",level);
+  assessment.put("safetyAssessment",safety);
+  assessment.put("officialExcluded",excluded);
+  assessment.put("signals",signals);
+  assessment.put("formula","name ≤40 + exact supplied logo URL 25 + scam text 25 + publisher mismatch 10 + suspicious URL/name wording 20; capped at 100; official reference match => 0");
+  assessment.put("missing",List.of("Image-content logo analysis","Account ownership verification","Live source verification"));
+  return assessment;
  }
  private String decision(String candidateId){List<Map<String,Object>> d=list("decision").stream().filter(x->candidateId.equals(x.get("candidateId"))).sorted(Comparator.comparing(x->text(x,"createdAt"))).toList();return d.isEmpty()?"UNREVIEWED":text(d.get(d.size()-1),"status");}
  public Map<String,Object> feedback(String candidateId,Map<String,Object> input){get(candidateId,"candidate");String status=required(input,"status");if(!List.of("CONFIRMED","DISMISSED","ALLOWLISTED","UNREVIEWED").contains(status))throw bad("Invalid decision",HttpStatus.BAD_REQUEST);return put(id("DECISION"),"decision",false,Map.of("candidateId",candidateId,"status",status,"note",required(input,"note"),"actor","LOCAL_ANALYST","createdAt",now()));}
@@ -58,11 +83,94 @@ public class ObservatoryService {
    String candidateId=previous==null?id("CAND"):text(previous,"id");Map<String,Object> c=new LinkedHashMap<>();for(String f:List.of("name","username","logo","description","publisher","contact","outboundUrl","sourceUrl"))c.put(f,text(raw,f));c.putAll(Map.of("brandId",brandId,"platform",platform,"identifier",identifier,"provenance",provenance,"capturedAt",now(),"scanId",scanId,"lifecycle","ACTIVE"));
    List<Map<String,Object>> diff=new ArrayList<>();if(previous!=null)for(String f:List.of("name","username","logo","description","publisher","contact","outboundUrl","sourceUrl","lifecycle"))if(!Objects.equals(previous.get(f),c.get(f)))diff.add(Map.of("field",f,"before",String.valueOf(previous.get(f)),"after",String.valueOf(c.get(f))));
    Map<String,Object> calculation=risk(c);c.put("risk",calculation);c.put("analystStatus",decision(candidateId));put(candidateId,"candidate",false,c);seen.add(candidateId);
-   String state=previous==null?"NEW":diff.isEmpty()?"UNCHANGED":"CHANGED";Map<String,Object> obs=new LinkedHashMap<>(c);obs.put("candidateId",candidateId);obs.put("change",state);obs.put("differences",diff);obs.put("screenshotStatus","UNAVAILABLE — no capture performed");obs.put("matchingSignals",calculation.get("signals"));put(id("EVIDENCE"),"evidence",false,obs);changes.add(Map.of("candidateId",candidateId,"change",state,"differences",diff));
+   String state=previous==null?"NEW":diff.isEmpty()?"UNCHANGED":"CHANGED";Map<String,Object> obs=new LinkedHashMap<>(c);obs.put("candidateId",candidateId);obs.put("change",state);obs.put("differences",diff);obs.put("screenshotStatus","UNAVAILABLE — no capture performed");obs.put("matchingSignals",calculation.get("signals"));put(id("EVIDENCE"),"evidence",false,obs);changes.add(Map.of("candidateId",candidateId,"change",state,"differences",diff,"name",text(c,"name"),"sourceUrl",text(c,"sourceUrl"),"platform",platform,"risk",calculation));
   }
   // Absence never resolves findings unless the analyst explicitly marks this source batch complete.
   if(Boolean.TRUE.equals(input.get("completeSourceSnapshot")))for(Map<String,Object> c:list("candidate"))if(brandId.equals(c.get("brandId"))&&platform.equals(c.get("platform"))&&provenance.equals(c.get("provenance"))&&!isDemoSeed(text(c,"id"))&&!seen.contains(c.get("id"))&&!"RESOLVED".equals(c.get("lifecycle"))){c.put("lifecycle","RESOLVED");c.put("capturedAt",now());put(text(c,"id"),"candidate",false,c);Map<String,Object> obs=new LinkedHashMap<>(c);obs.put("candidateId",c.get("id"));obs.put("change","RESOLVED");obs.put("differences",List.of(Map.of("field","lifecycle","before","ACTIVE","after","RESOLVED")));put(id("EVIDENCE"),"evidence",false,obs);changes.add(Map.of("candidateId",c.get("id"),"change","RESOLVED","reason","Absent from explicitly complete imported source snapshot"));}
   return put(scanId,"scan",false,Map.of("brandId",brandId,"platform",platform,"provenance",provenance,"capturedAt",now(),"changes",changes,"completeSourceSnapshot",Boolean.TRUE.equals(input.get("completeSourceSnapshot")),"coverage","Imported observations only; no live discovery connector"));
+ }
+
+ /** Evaluate submitted metadata against stored references; no external account fetch. */
+ public Map<String,Object> analyzeSubmitted(Map<String,Object> input){
+  String source=required(input,"sourceUrl");url(source);
+  URI uri=URI.create(source);String host=uri.getHost().toLowerCase(Locale.ROOT);
+  String platform=text(input,"platform");
+  if(platform.isBlank()){
+   if(host.equals("instagram.com")||host.endsWith(".instagram.com"))platform="Instagram";
+   else if(host.equals("facebook.com")||host.endsWith(".facebook.com"))platform="Facebook";
+   else if(host.equals("x.com")||host.equals("twitter.com"))platform="X";
+   else if(host.equals("linkedin.com")||host.endsWith(".linkedin.com"))platform="LinkedIn";
+   else if(host.equals("play.google.com"))platform="Google Play";
+   else if(host.equals("apps.apple.com"))platform="Apple App Store";
+   else platform="Website / other";
+  }
+  if(platform.length()>250)throw bad("Platform name too long",HttpStatus.BAD_REQUEST);
+  String path=uri.getPath()==null?"":uri.getPath().replaceAll("/+$","");
+  String slug=path.isEmpty()?host:path.substring(path.lastIndexOf('/')+1);
+  String username=text(input,"username");if(username.isBlank())username=slug;
+  String name=text(input,"name");if(name.isBlank())name=username.replaceAll("[_\\-.]+"," ").trim();
+  if(name.isEmpty())name=host;
+  if(name.length()>250||username.length()>250)throw bad("Name or username too long",HttpStatus.BAD_REQUEST);
+  String identity=Similarity.normalize(name+" "+username+" "+host);
+  Map<String,Object> matched=null;int best=0;boolean ambiguous=false;
+  List<Map<String,Object>> registeredAssets=list("asset");
+  String cleanUrl=source.replaceAll("/+$","").toLowerCase(Locale.ROOT);
+  for(Map<String,Object> brand:list("brand")){
+   String brandKey=Similarity.normalize(text(brand,"name"));
+   if(brandKey.length()<4)continue;
+   boolean officialUrl=registeredAssets.stream().anyMatch(a->text(brand,"id").equals(a.get("brandId"))&&cleanUrl.equals(text(a,"sourceUrl").replaceAll("/+$","").toLowerCase(Locale.ROOT)));
+   boolean similar=identity.contains(brandKey);
+   if(!officialUrl&&!similar)continue;
+   int confidence=(officialUrl?10000:0)+brandKey.length();
+   if(confidence>best){best=confidence;matched=brand;ambiguous=false;}
+   else if(confidence==best)ambiguous=true;
+  }
+  if(ambiguous)matched=null;
+  String brandId=matched==null?"":text(matched,"id");
+  String stable=cleanUrl;
+  String provenance=Boolean.TRUE.equals(input.get("synthetic"))?"SYNTHETIC":"MANUAL_IMPORT";
+  Map<String,Object> previous=null;
+  for(Map<String,Object> old:list("candidate"))if(stable.equals(text(old,"identifier"))&&platform.equals(text(old,"platform"))&&provenance.equals(text(old,"provenance"))&&!isDemoSeed(text(old,"id"))){previous=old;break;}
+  String candidateId=previous==null?id("CAND"):text(previous,"id");
+  String scanId=id("SCAN");
+  Map<String,Object> c=new LinkedHashMap<>();
+  for(String field:List.of("publisher","description","logo","contact","outboundUrl")){
+   String value=text(input,field);if(value.length()>4000)throw bad("Metadata too long",HttpStatus.BAD_REQUEST);c.put(field,value);
+  }
+  c.putAll(Map.of("brandId",brandId,"platform",platform,"identifier",stable,"name",name,"username",username,"sourceUrl",source,"provenance",provenance,"capturedAt",now(),"scanId",scanId,"lifecycle","ACTIVE"));
+  Map<String,Object> assessment;
+  if(matched!=null){assessment=risk(c);}else{
+   int score=0;List<Map<String,Object>> signals=new ArrayList<>();
+   String body=(text(c,"description")+" "+name).toLowerCase(Locale.ROOT);
+   if(body.matches(".*(claim.{0,12}(reward|prize|coupon)|send.{0,8}otp|verify.{0,12}(account|password)|urgent payment).*")){
+    score+=35;signals.add(Map.of("signal","Potential scam or credential request wording","points",35));
+   }
+   if((host+" "+path).matches(".*(secure-login|verify-account|claim-reward|free-coupon|reset-password).*")){
+    score+=35;signals.add(Map.of("signal","Suspicious URL wording","points",35));
+   }
+   if(!text(c,"outboundUrl").isBlank()){
+    score+=10;signals.add(Map.of("signal","Submitted outbound link requires separate verification","points",10));
+   }
+   assessment=new LinkedHashMap<>();assessment.put("score",score);
+   assessment.put("verdict",score>=35?"SUSPICIOUS":"INCONCLUSIVE");
+   assessment.put("riskLevel",score>=70?"HIGH":score>=35?"MEDIUM":"UNKNOWN");
+   assessment.put("safetyAssessment","NOT_VERIFIED_SAFE");assessment.put("officialExcluded",false);
+   assessment.put("signals",signals);
+   assessment.put("missing",List.of("No matching registered brand","No live account inspection","No external reputation verification"));
+  }
+  c.put("risk",assessment);c.put("analystStatus",decision(candidateId));
+  put(candidateId,"candidate",false,c);
+  Map<String,Object> evidence=new LinkedHashMap<>(c);evidence.put("candidateId",candidateId);
+  evidence.put("change",previous==null?"NEW":"REANALYZED");evidence.put("matchingSignals",assessment.get("signals"));
+  evidence.put("screenshotStatus","UNAVAILABLE — no live capture");
+  put(id("EVIDENCE"),"evidence",false,evidence);
+  put(scanId,"scan",false,Map.of("candidateId",candidateId,"capturedAt",now(),"provenance",provenance,"coverage","Submitted metadata only; no live source lookup"));
+  Map<String,Object> response=new LinkedHashMap<>();
+  response.put("id",candidateId);response.put("name",name);response.put("sourceUrl",source);
+  response.put("platform",platform);response.put("risk",assessment);
+  response.put("matchedBrand",matched==null?"No unambiguous registered match":text(matched,"name"));
+  response.put("provenance",provenance);response.put("coverage","Compared submitted metadata with stored references. No website or social account was fetched.");
+  return response;
  }
  public List<Map<String,Object>> candidates(){return list("candidate").stream().map(c->{c.put("analystStatus",decision(text(c,"id")));return c;}).toList();}
  public Map<String,Object> comparison(String candidateId,String assetId){Map<String,Object> c=get(candidateId,"candidate"),a=get(assetId,"asset");if(!text(c,"brandId").equals(a.get("brandId")))throw bad("Compare an official asset from the same brand",HttpStatus.BAD_REQUEST);List<Map<String,Object>> fields=new ArrayList<>();for(String f:List.of("username","name","logo","description","publisher","identifier","platform"))fields.add(Map.of("field",f,"official",text(a,f),"candidate",text(c,f),"different",!text(a,f).equals(text(c,f)),"available",!text(a,f).isEmpty()&&!text(c,f).isEmpty()));return Map.of("official",a,"candidate",c,"fields",fields,"risk",c.get("risk"),"cases",list("case").stream().filter(k->candidateId.equals(k.get("candidateId"))).toList());}
@@ -73,7 +181,14 @@ public class ObservatoryService {
   List<Map<String,Object>> groups=new ArrayList<>();Set<String> visited=new HashSet<>();for(Map<String,Object> edge:edges){String start=text(edge,"from");if(visited.contains(start))continue;Set<String> members=new LinkedHashSet<>();members.add(start);boolean grew=true;while(grew){grew=false;for(Map<String,Object> e:edges)if(members.contains(text(e,"from"))||members.contains(text(e,"to"))){grew|=members.add(text(e,"from"));grew|=members.add(text(e,"to"));}}visited.addAll(members);groups.add(Map.of("members",all.stream().filter(c->members.contains(c.get("id"))).toList(),"relationships",edges.stream().filter(e->members.contains(e.get("from"))).toList(),"claim","Evidence grouping only; not an ownership attribution"));}return groups;
  }
  public Map<String,Object> exposure(String brandId){get(brandId,"brand");List<Map<String,Object>> observed=candidates().stream().filter(c->brandId.equals(c.get("brandId"))).toList();Map<String,Object> scores=new LinkedHashMap<>();for(String provenance:List.of("SYNTHETIC","MANUAL_IMPORT")){List<Map<String,Object>> active=observed.stream().filter(c->provenance.equals(c.get("provenance"))&&"ACTIVE".equals(c.get("lifecycle"))&&!Boolean.TRUE.equals(((Map<?,?>)c.get("risk")).get("officialExcluded"))&&!List.of("DISMISSED","ALLOWLISTED").contains(c.get("analystStatus"))).toList();double sum=active.stream().mapToDouble(c->((Number)((Map<?,?>)c.get("risk")).get("score")).doubleValue()).sum();scores.put(provenance,Map.of("score",Math.round(100*(1-Math.exp(-sum/200))),"sumRisk",sum,"count",active.size()));}return Map.of("scores",scores,"formula","round(100 × (1 − exp(−Σ active candidate risk / 200))); dismissed, allowlisted and resolved excluded; provenance scored separately","configuredLiveSources",0,"liveScore","UNAVAILABLE","observedPlatforms",observed.stream().map(c->c.get("platform")).distinct().toList(),"coverage","Imported/synthetic observations only. Missing data is unknown, never evidence of safety. Does not measure the entire internet.");}
- public Map<String,Object> overview(){return Map.of("brands",list("brand"),"assets",list("asset"),"candidates",candidates(),"cases",list("case"),"sources",Map.of("liveConnected",0,"mode","MANUAL_IMPORT_AND_SYNTHETIC","unavailable",List.of("Live social feeds","Live app-store feeds","Screenshot capture")));}
+ public Map<String,Object> overview(){
+  List<Map<String,Object>> active=candidates().stream().filter(c->"ACTIVE".equals(c.get("lifecycle"))&&!text(c,"id").startsWith("DEMO-")).toList();
+  long high=active.stream().filter(c->((Number)((Map<?,?>)c.get("risk")).get("score")).intValue()>=70).count();
+  long medium=active.stream().filter(c->{int score=((Number)((Map<?,?>)c.get("risk")).get("score")).intValue();return score>=35&&score<70;}).count();
+  Map<String,Long> byPlatform=new TreeMap<>();
+  for(Map<String,Object> c:active)byPlatform.merge(text(c,"platform"),1L,Long::sum);
+  return Map.of("total",active.size(),"high",high,"medium",medium,"low",active.size()-high-medium,"platformCounts",byPlatform,"coverage","Submitted data only; no live discovery connector");
+ }
  public Map<String,Object> reset(Map<String,Object> input){if(!"RESET SYNTHETIC DEMO".equals(input.get("confirmation")))throw bad("Type RESET SYNTHETIC DEMO",HttpStatus.BAD_REQUEST);List<RecordDocument> designated=store.findByDemoSeedTrue();store.deleteAll(designated);store.flush();seed();put(id("AUDIT"),"resetAudit",false,Map.of("createdAt",now(),"action","RESET_DESIGNATED_DEMO_SEEDS","deleted",designated.size(),"actor","LOCAL_ANALYST"));return Map.of("message","Designated synthetic seeds restored. User assets, scans, candidates, cases and audit history preserved.","count",designated.size());}
  public void seed(){if(store.existsById("DEMO-BRAND"))return;put("DEMO-BRAND","brand",true,Map.of("name","NovaBank","provenance","SYNTHETIC","createdAt",now()));
   for(String platform:List.of("Instagram","Google Play")){String key=platform.equals("Instagram")?"DEMO-SOCIAL-ASSET":"DEMO-APP-ASSET";put(key,"asset",true,Map.of("brandId","DEMO-BRAND","name","NovaBank","username","novabank","platform",platform,"identifier",platform.equals("Instagram")?"novabank-official":"com.novabank.official","publisher","NovaBank Ltd","logo","https://novabank.example/logo.svg","description","Official banking services","sourceUrl","https://novabank.example/official","provenance","SYNTHETIC"));}

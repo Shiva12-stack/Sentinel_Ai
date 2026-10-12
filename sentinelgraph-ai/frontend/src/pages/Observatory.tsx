@@ -1,38 +1,141 @@
 import { useEffect, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
-import { ArrowUpRight, Radar, ShieldCheck, Database, FlaskConical, Network, History, Archive, Scale, RefreshCw, Download, CheckCircle, Search } from 'lucide-react'
+import { Activity, BarChart3, CheckCircle2, Search, ShieldCheck, ShieldAlert } from 'lucide-react'
 import { ConsoleShell } from '../components/UI'
-import { obs, download, type RecordData as D } from '../lib/observatory'
-const tabs=[['/observatory','Overview',Radar],['/observatory/brand','Brand assets',ShieldCheck],['/observatory/monitor','Social & apps',Search],['/observatory/evidence','Evidence locker',Archive],['/observatory/compare','Comparison lab',Scale],['/observatory/test','Accuracy lab',FlaskConical],['/observatory/clusters','Threat clusters',Network],['/observatory/history','Change history',History],['/observatory/cases','Analyst workspace',Database],['/observatory/reset','Demo reset',RefreshCw]] as const
-function Card({title,children}:{title:string,children:React.ReactNode}){return <section className="obs-card"><h2>{title}</h2>{children}</section>}
-function Json({data}:{data:unknown}){return <pre className="obs-json">{JSON.stringify(data,null,2)}</pre>}
-function Tag({value}:{value:string}){return <span className={'obs-tag '+(value==='SYNTHETIC'?'synthetic':'')}>{value?.replaceAll('_',' ')}</span>}
-export default function Observatory(){
- const path=useLocation().pathname;const [data,setData]=useState<D|null>(null),[error,setError]=useState(''),[busy,setBusy]=useState(false),[notice,setNotice]=useState(''),[brandId,setBrandId]=useState(''),[candidateId,setCandidateId]=useState(''),[assetId,setAssetId]=useState(''),[extra,setExtra]=useState<any>(null)
- const [brandName,setBrandName]=useState('NovaBank'),[candidateName,setCandidateName]=useState('NоvaBank'),[platform,setPlatform]=useState('Instagram'),[identifier,setIdentifier]=useState(''),[name,setName]=useState(''),[sourceUrl,setSourceUrl]=useState(''),[username,setUsername]=useState(''),[publisher,setPublisher]=useState(''),[description,setDescription]=useState(''),[logo,setLogo]=useState(''),[contact,setContact]=useState(''),[outboundUrl,setOutboundUrl]=useState(''),[provenance,setProvenance]=useState('MANUAL_IMPORT'),[snapshot,setSnapshot]=useState(false),[decision,setDecision]=useState('CONFIRMED'),[note,setNote]=useState(''),[confirmation,setConfirmation]=useState('')
- async function reload(){const d=await obs();setData(d);setBrandId(b=>b&&d.brands.some((v:D)=>v.id===b)?b:d.brands[0]?.id||'');setCandidateId(c=>c&&d.candidates.some((v:D)=>v.id===c)?c:d.candidates[0]?.id||'');setAssetId(a=>a&&d.assets.some((v:D)=>v.id===a)?a:d.assets[0]?.id||'')}
- async function action(fn:()=>Promise<any>,message=''){setBusy(true);setError('');setNotice('');try{const result=await fn();setExtra(result);setNotice(message);await reload();return result}catch(e){setError(e instanceof Error?e.message:String(e))}finally{setBusy(false)}}
- useEffect(()=>{setExtra(null);setError('');setNotice('');reload().catch(e=>setError(e.message));},[path])
- useEffect(()=>{if(!brandId||path!=='/observatory')return;obs(`/brands/${encodeURIComponent(brandId)}/exposure`).then(setExtra).catch(e=>setError(e.message))},[brandId,path,data])
- useEffect(()=>{const endpoint=path.endsWith('/evidence')?'/evidence':path.endsWith('/history')?'/history':path.endsWith('/clusters')?'/clusters':path.endsWith('/cases')?'/decisions':null;if(endpoint)obs(endpoint).then(setExtra).catch(e=>setError(e.message))},[path,data])
- useEffect(()=>{const c=data?.candidates.find((v:D)=>v.id===candidateId);if(c&&!data?.assets.some((a:D)=>a.id===assetId&&a.brandId===c.brandId))setAssetId(data?.assets.find((a:D)=>a.brandId===c.brandId)?.id||'')},[candidateId,data,assetId])
- const candidates:D[]=data?.candidates||[],assets:D[]=data?.assets||[],brands:D[]=data?.brands||[];const candidate=candidates.find(c=>c.id===candidateId)
- function brandSelect(){return <label>Brand<select value={brandId} onChange={e=>setBrandId(e.target.value)}>{brands.map(b=><option key={b.id} value={b.id}>{b.name} · {b.provenance}</option>)}</select></label>}
- function candidateSelect(){return <label>Candidate<select value={candidateId} onChange={e=>{setCandidateId(e.target.value);setExtra(null)}}>{candidates.map(c=><option key={c.id} value={c.id}>{c.name} · {c.platform} · {c.provenance}</option>)}</select></label>}
- function field(label:string,value:string,set:(v:string)=>void,required=false){return <label>{label}<input value={value} required={required} onChange={e=>set(e.target.value)}/></label>}
- function metadataForm(){return <>{brandSelect()}<label>Platform<select value={platform} onChange={e=>setPlatform(e.target.value)}>{['Instagram','Facebook','X','LinkedIn','Google Play','Apple App Store'].map(p=><option key={p}>{p}</option>)}</select></label>{field('Name',name,setName,true)}{field('Stable identifier',identifier,setIdentifier,true)}{field('Source URL',sourceUrl,setSourceUrl,true)}{field('Username',username,setUsername)}{field('Publisher',publisher,setPublisher)}{field('Description',description,setDescription)}{field('Logo URL (optional)',logo,setLogo)}</>}
- const selectedTitle=tabs.find(t=>t[0]===path)?.[1]||'Observatory'
- return <ConsoleShell title={selectedTitle} subtitle="Digital Threat Observatory · social identity and app integrity"><div className="obs"><div className="obs-source"><span className="obs-pulse"/> JAVA API + POSTGRESQL <span>Live feeds: not configured · imported and synthetic evidence only</span></div><nav className="obs-tabs">{tabs.map(([url,title,Icon])=><Link key={url} to={url} className={path===url?'selected':''}><Icon size={15}/>{title}</Link>)}</nav>{error&&<div className="obs-error" role="alert">{error}. Check that PostgreSQL and the Java API are running.</div>}{notice&&<div className="obs-notice" role="status"><CheckCircle size={16}/>{notice}</div>}{!data&&!error&&<p>Connecting to investigation records…</p>}
- {data&&path==='/observatory'&&<><div className="obs-hero"><div><div className="obs-kicker">OBSERVE. COMPARE. INVESTIGATE.</div><h2>See the signal.<br/><em>Keep the evidence.</em></h2><p>A single investigation surface for suspicious social identities and unauthorized apps.</p><Link className="obs-button" to="/observatory/monitor">Review social & app observations <ArrowUpRight size={17}/></Link></div><div className="obs-orbit"><Radar size={145} strokeWidth={.65}/><span>EXTERNAL IDENTITY<br/>OBSERVATORY</span></div></div><div className="obs-stats">{[['Observed candidates',candidates.length],['Official assets',assets.length],['Investigation cases',data.cases.length],['Live sources connected',0]].map(([label,value])=><div key={label}><span>{label}</span><strong>{value}</strong></div>)}</div><Card title="Brand exposure · observed coverage">{brandSelect()}{extra?.scores&&<><div className="obs-score-grid">{Object.entries(extra.scores).map(([key,val])=>{const v=val as D;return <div key={key}><Tag value={key}/><strong>{v.score}<small>/100</small></strong><p>{v.count} active findings · summed risk {v.sumRisk}</p></div>})}</div><p className="obs-muted">Live score: {extra.liveScore}. {extra.coverage}</p><details><summary>Show scoring formula and coverage</summary><Json data={extra}/></details></>}</Card><Card title="Prioritized observation queue"><CandidateTable candidates={candidates}/></Card></>}
- {data&&path.endsWith('/brand')&&<><div className="obs-columns"><Card title="Register a brand"><form onSubmit={e=>{e.preventDefault();action(()=>obs('/brands',{name:brandName}),'Brand registered')}}>{field('Brand name',brandName,setBrandName,true)}<button className="obs-button" disabled={busy}>Create brand</button></form></Card><Card title="Add an official asset"><form className="obs-form" onSubmit={e=>{e.preventDefault();action(()=>obs('/assets',{brandId,platform,identifier,name,sourceUrl,username,publisher,description,logo}),'Official asset saved')}}>{metadataForm()}<button className="obs-button" disabled={busy||!brandId}>Save official asset</button></form></Card></div><Card title="Reference registry">{assets.map(a=><div className="obs-record" key={a.id}><strong>{a.name} · {a.platform}</strong><Tag value={a.provenance}/><p>{a.identifier} · {a.sourceUrl}</p></div>)}</Card></>}
- {data&&path.endsWith('/monitor')&&<><Card title="Import a social or app observation"><p className="obs-muted">This submits source metadata to the backend detector. It does not fetch or verify a public account. Leave unavailable fields empty.</p><form className="obs-form" onSubmit={e=>{e.preventDefault();action(()=>obs('/scans',{brandId,platform,provenance,completeSourceSnapshot:snapshot,candidates:[{identifier,name,sourceUrl,username,publisher,description,logo,contact,outboundUrl}]}),'Observation processed and evidence snapshot saved')}}>{metadataForm()}{field('Contact indicator (optional)',contact,setContact)}{field('Outbound URL indicator (optional)',outboundUrl,setOutboundUrl)}<label>Evidence provenance<select value={provenance} onChange={e=>setProvenance(e.target.value)}><option>MANUAL_IMPORT</option><option>SYNTHETIC</option></select></label><label className="obs-check"><input type="checkbox" checked={snapshot} onChange={e=>setSnapshot(e.target.checked)}/> This one-record batch is a COMPLETE source snapshot; mark other records for this brand, platform and provenance resolved.</label><button className="obs-button" disabled={busy||!brandId}>Run backend detection</button></form>{extra&&<Json data={extra}/>}</Card><Card title="Social & app findings"><CandidateTable candidates={candidates}/></Card></>}
- {data&&path.endsWith('/test')&&<Card title="Detection accuracy test lab"><Tag value="MANUAL_TEST"/><p className="obs-muted">Runs the same Java similarity function used by scan detection. This does not create a monitoring finding.</p><div className="obs-presets">{['NоvaBank','Nova Bank','N0vaBank','NovaBank Support'].map(s=><button key={s} className="obs-ghost" onClick={()=>{setBrandName('NovaBank');setCandidateName(s)}}>{s}</button>)}</div><form className="obs-form" onSubmit={e=>{e.preventDefault();action(()=>obs('/test',{brandName,candidateName,platform,identifier}))}}>{field('Brand name',brandName,setBrandName,true)}{field('Candidate name',candidateName,setCandidateName,true)}<label>Platform for official exclusion<select value={platform} onChange={e=>setPlatform(e.target.value)}>{['Instagram','Google Play','Facebook','X','LinkedIn','Apple App Store'].map(p=><option key={p}>{p}</option>)}</select></label>{field('Stable identifier (optional)',identifier,setIdentifier)}<button className="obs-button" disabled={busy}>Run similarity test</button></form>{extra?.similarity!==undefined&&<><div className="obs-result"><strong>{extra.similarity}%</strong><span>normalized similarity · edit distance {extra.editDistance}<br/>Official exclusion: {String(extra.officialExcluded)}</span></div><table className="obs-table"><thead><tr><th>Position</th><th>Official character</th><th>Candidate character</th><th>Unicode</th></tr></thead><tbody>{extra.rawDifferences.map((d:D)=><tr key={d.position}><td>{d.position}</td><td>{d.official}</td><td>{d.candidate}</td><td>{d.codePoint}</td></tr>)}</tbody></table><Json data={extra}/></>}</Card>}
- {data&&path.endsWith('/compare')&&<Card title="Official vs suspected identity"><div className="obs-form">{candidateSelect()}<label>Official asset<select value={assetId} onChange={e=>{setAssetId(e.target.value);setExtra(null)}}>{assets.filter(a=>a.brandId===candidate?.brandId).map(a=><option key={a.id} value={a.id}>{a.name} · {a.platform}</option>)}</select></label><button className="obs-button" disabled={busy||!candidateId||!assets.some(a=>a.id===assetId&&a.brandId===candidate?.brandId)} onClick={()=>action(()=>obs(`/compare?candidateId=${encodeURIComponent(candidateId)}&assetId=${encodeURIComponent(assetId)}`))}>Compare evidence</button></div>{extra?.fields&&<><div className="obs-comparison"><div><Tag value="OFFICIAL REFERENCE"/><h3>{extra.official.name}</h3><p>{extra.official.platform}</p></div><div><Tag value={extra.candidate.provenance}/><h3>{extra.candidate.name}</h3><p>{extra.candidate.platform}</p></div></div><div className="obs-scroll"><table className="obs-table"><thead><tr><th>Field</th><th>Official</th><th>Suspected</th><th>Assessment</th></tr></thead><tbody>{extra.fields.map((f:D)=><tr key={f.field} className={f.different?'different':''}><td>{f.field}</td><td>{f.official||'Unavailable'}</td><td>{f.candidate||'Unavailable'}</td><td>{!f.available?'Missing data':f.different?'Different':'Same'}</td></tr>)}</tbody></table></div><Json data={extra.risk}/><Link className="obs-button" to="/observatory/cases">Open analyst workspace <ArrowUpRight size={17}/></Link><p>{extra.cases.length} linked cases</p></>}</Card>}
- {data&&path.endsWith('/evidence')&&<Card title="Evidence locker"><p className="obs-muted">Immutable observation snapshots retain source URL, timestamp, metadata and matching signals. Screenshots are unavailable; no capture is performed.</p>{Array.isArray(extra)&&extra.map((e:D)=><details className="obs-record" key={e.id}><summary><strong>{e.name}</strong> · {e.platform} · {e.change} <Tag value={e.provenance}/><small>{e.capturedAt}</small></summary><Json data={e}/></details>)}<Link className="obs-button" to="/observatory/cases">Export through an investigation report</Link></Card>}
- {data&&path.endsWith('/history')&&<Card title="Historical change tracking"><p className="obs-muted">NEW, CHANGED, UNCHANGED and RESOLVED observations are retained. Missing records resolve only in explicitly complete imported snapshots.</p>{Array.isArray(extra)&&[...extra].reverse().map((e:D)=><div className="obs-timeline" key={e.id}><Tag value={e.change}/><strong>{e.name}</strong><small>{e.capturedAt} · {e.provenance}</small>{e.differences?.length>0&&<Json data={e.differences}/>}</div>)}</Card>}
- {data&&path.endsWith('/clusters')&&<Card title="Cross-platform evidence groups"><p className="obs-muted">Groups require a shared supplied contact or outbound domain. Similar names alone never create a relationship. Shared indicators do not prove common ownership.</p>{Array.isArray(extra)&&extra.length===0&&<p>No supporting cross-platform evidence found.</p>}{Array.isArray(extra)&&extra.map((g:D,i:number)=><div className="obs-record" key={i}><h3>Evidence group {i+1}</h3><div className="obs-cluster">{g.members.map((c:D)=><div key={c.id}><Network size={22}/><strong>{c.name}</strong><span>{c.platform}</span><Tag value={c.provenance}/></div>)}</div>{g.relationships.map((r:D)=><p key={r.from+r.to}>{r.reasons.join(' · ')}<br/><small>{r.claim}</small></p>)}</div>)}</Card>}
- {data&&path.endsWith('/cases')&&<><div className="obs-columns"><Card title="Record an analyst decision"><form onSubmit={e=>{e.preventDefault();action(()=>obs(`/candidates/${encodeURIComponent(candidateId)}/feedback`,{status:decision,note}),'Decision recorded; future scans use this explicit decision')}}>{candidateSelect()}<label>Decision<select value={decision} onChange={e=>setDecision(e.target.value)}>{['CONFIRMED','DISMISSED','ALLOWLISTED','UNREVIEWED'].map(s=><option key={s}>{s}</option>)}</select></label>{field('Reason / investigation note',note,setNote,true)}<button className="obs-button" disabled={busy||!candidateId}>Save analyst feedback</button></form><p className="obs-muted">Deterministic decision reuse. No adaptive machine learning claimed.</p></Card><Card title="Create an investigation"><form onSubmit={e=>{e.preventDefault();action(()=>obs(`/candidates/${encodeURIComponent(candidateId)}/cases`,{title:`Investigate ${candidate?.name||'candidate'}`}),'Investigation created')}}>{candidateSelect()}<button className="obs-button" disabled={busy||!candidateId}>Create investigation case</button></form></Card></div><Card title="Investigation reports">{data.cases.length===0&&<p>No cases yet.</p>}{data.cases.map((c:D)=><div className="obs-record" key={c.id}><strong>{c.title}</strong><small>{c.id}</small><button className="obs-ghost" disabled={busy} onClick={()=>action(async()=>{const r=await obs(`/cases/${encodeURIComponent(c.id)}/report`);download(r,`${c.id}-evidence-report.json`);return r},'Report exported with evidence and investigation history')}><Download size={15}/> Export evidence report</button></div>)}</Card><Card title="Decision audit history">{Array.isArray(extra)&&extra.map((d:D)=><div className="obs-record" key={d.id}><Tag value={d.status}/><strong>{d.note}</strong><small>{d.candidateId} · {d.actor} · {d.createdAt}</small></div>)}</Card></>}
- {data&&path.endsWith('/reset')&&<Card title="Guided synthetic demo reset"><p>Restore the designated NovaBank reference assets and three sample candidates. User-created brands, assets, imported scans, evidence, cases and analyst audit records are preserved.</p><p className="obs-muted">Only backend records explicitly marked as designated demo seeds are reset. Synthetic data you create yourself is preserved.</p><form onSubmit={e=>{e.preventDefault();action(()=>obs('/demo/reset',{confirmation}),'Demo seeds restored. User records and audit history preserved.');setConfirmation('')}}>{field('Type RESET SYNTHETIC DEMO',confirmation,setConfirmation,true)}<button className="obs-button danger" disabled={busy||confirmation!=='RESET SYNTHETIC DEMO'}>Reset designated demo seeds</button></form><Link className="obs-ghost" to="/observatory">Return to observatory</Link></Card>}
- </div></ConsoleShell>
+import { obs, type RecordData } from '../lib/observatory'
+
+type AnalysisResult = {
+  id: string
+  name: string
+  sourceUrl: string
+  platform: string
+  matchedBrand: string
+  coverage: string
+  risk: { score: number; verdict: string; riskLevel: string; signals: Array<{ signal: string; points: number }> }
 }
-function CandidateTable({candidates}:{candidates:D[]}){return <div className="obs-scroll"><table className="obs-table"><thead><tr><th>Identity</th><th>Platform</th><th>Risk</th><th>Analyst / lifecycle</th><th>Evidence</th></tr></thead><tbody>{[...candidates].sort((a,b)=>b.risk.score-a.risk.score).map(c=><tr key={c.id}><td><strong>{c.name}</strong><small>{c.identifier}</small></td><td>{c.platform}</td><td><span className="obs-risk">{c.risk.score}</span>{c.risk.officialExcluded&&<small>Official excluded</small>}</td><td>{c.analystStatus}<small>{c.lifecycle}</small></td><td><Tag value={c.provenance}/></td></tr>)}</tbody></table>{candidates.length===0&&<p>No observations stored.</p>}</div>}
+const tabs = [
+  { url: '/observatory', label: 'Overview', icon: BarChart3 },
+  { url: '/observatory/brand', label: 'Brand assets', icon: ShieldCheck },
+  { url: '/observatory/monitor', label: 'Social & apps', icon: Search },
+]
+function Card({ title, children }: { title: string; children: React.ReactNode }) {
+  return <section className="obs-card"><h2>{title}</h2>{children}</section>
+}
+function Field({ label, value, onChange, required = false, placeholder = '' }: {
+  label: string; value: string; onChange: (value: string) => void; required?: boolean; placeholder?: string
+}) {
+  return <label>{label}<input value={value} onChange={e => onChange(e.target.value)} required={required} placeholder={placeholder} /></label>
+}
+function ScorePanel({ result }: { result: AnalysisResult }) {
+  const risk = result.risk
+  const score = Number(risk.score) || 0
+  const concern = score >= 35
+  const official = risk.verdict === 'SUPPLIED_OFFICIAL_ASSET_MATCH'
+  return <div className={`obs-score-panel ${concern ? 'obs-high' : 'obs-uncertain'}`} role="status">
+    <div className="obs-score-head"><ShieldAlert size={24}/><span>Current risk analysis</span></div>
+    <div className="obs-score-main"><strong>{score}<small>/100</small></strong><div>
+      <h3>{official ? 'Registered reference match — not independently verified' : concern ? 'Potentially risky' : 'Insufficient evidence to confirm safety'}</h3>
+      <p>{result.name} · {result.platform}</p>
+    </div></div>
+    <div className="obs-meter"><span style={{ width: `${Math.max(2, Math.min(100, score))}%` }}/></div>
+    <p><strong>Reference comparison:</strong> {result.matchedBrand}</p>
+    <p><strong>Submitted URL:</strong> {result.sourceUrl}</p>
+    {risk.signals?.length > 0 ? <div className="obs-signal-list"><h4>Why this score?</h4>{risk.signals.map((signal, i) => <div key={i}><span>{signal.signal}</span><b>+{signal.points}</b></div>)}</div> : <p>No definite warning indicators were detected from the supplied information.</p>}
+    <p className="obs-muted"><strong>Coverage:</strong> {result.coverage} A low score is not a safety guarantee.</p>
+  </div>
+}
+export default function Observatory() {
+  const path = useLocation().pathname
+  const [overview, setOverview] = useState<RecordData | null>(null)
+  const [error, setError] = useState('')
+  const [message, setMessage] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [result, setResult] = useState<AnalysisResult | null>(null)
+  const [brandName, setBrandName] = useState('')
+  const [assetBrand, setAssetBrand] = useState('')
+  const [assetPlatform, setAssetPlatform] = useState('')
+  const [assetName, setAssetName] = useState('')
+  const [assetIdentifier, setAssetIdentifier] = useState('')
+  const [assetUrl, setAssetUrl] = useState('')
+  const [assetUsername, setAssetUsername] = useState('')
+  const [assetPublisher, setAssetPublisher] = useState('')
+  const [assetDescription, setAssetDescription] = useState('')
+  const [assetLogo, setAssetLogo] = useState('')
+  const [sourceUrl, setSourceUrl] = useState('')
+  const [platform, setPlatform] = useState('')
+  const [name, setName] = useState('')
+  const [username, setUsername] = useState('')
+  const [publisher, setPublisher] = useState('')
+  const [description, setDescription] = useState('')
+  const [outboundUrl, setOutboundUrl] = useState('')
+  const [synthetic, setSynthetic] = useState(true)
+
+  useEffect(() => { setResult(null); setMessage(''); setError('') }, [path])
+
+  useEffect(() => {
+    if (path !== '/observatory') return
+    obs().then(setOverview).catch(e => setError(e instanceof Error ? e.message : String(e)))
+  }, [path])
+
+  async function submit(task: () => Promise<unknown>, success: string): Promise<boolean> {
+    setBusy(true); setError(''); setMessage('')
+    try { await task(); setMessage(success); return true }
+    catch (e) { setError(e instanceof Error ? e.message : String(e)); return false }
+    finally { setBusy(false) }
+  }
+  const total = Number(overview?.total || 0)
+  const high = Number(overview?.high || 0)
+  const medium = Number(overview?.medium || 0)
+  const low = Number(overview?.low || 0)
+  const riskGroups = [{ label: 'High risk', count: high, className: 'high' }, { label: 'Medium risk', count: medium, className: 'medium' }, { label: 'Low / inconclusive', count: low, className: 'low' }]
+  const selected = tabs.find(t => t.url === path) || tabs[0]
+  return <ConsoleShell title={selected.label === 'Overview' ? 'Threat Observatory' : selected.label} subtitle="Digital Threat Observatory · brand identity and risk signals">
+    <div className="obs">
+      <div className="obs-source"><span className="obs-pulse"/> JAVA API + POSTGRESQL <span>Submitted metadata only · no live social or app-store inspection</span></div>
+      <nav className="obs-tabs">{tabs.map(({url, label, icon: Icon}) => <Link key={url} to={url} className={selected.url === url ? 'selected' : ''}><Icon size={15}/>{label}</Link>)}</nav>
+      {error && <div role="alert" className="obs-error">{error}</div>}
+      {message && <div role="status" className="obs-notice"><CheckCircle2 size={17}/>{message}</div>}
+      {path === '/observatory' && <>
+        <div className="obs-hero"><div><div className="obs-kicker">SENTINELGRAPH · RISK OVERVIEW</div><h2>See the signals.<br/><em>Understand the risks.</em></h2><p>Aggregate analysis of submitted observations, with transparent risk levels.</p><Link className="obs-button" to="/observatory/monitor">Analyze a URL or account</Link></div><div className="obs-orbit"><Activity size={118} strokeWidth={1}/><span>RISK INTELLIGENCE</span></div></div>
+        <div className="obs-stats"><div><span>All submitted observations</span><strong>{total}</strong></div><div><span>High-risk findings</span><strong className="obs-critical">{high}</strong></div><div><span>Medium-risk findings</span><strong>{medium}</strong></div><div><span>Needs more evidence</span><strong>{low}</strong></div></div>
+        <Card title="Risk distribution dashboard"><div className="obs-chart-description">Counts are based on saved observations. Repeated submissions of the same URL update its latest candidate record.</div><div className="obs-bars">{riskGroups.map(g => <div className="obs-bar-row" key={g.label}><span>{g.label}</span><div className="obs-bar-track"><div className={`obs-bar-fill ${g.className}`} style={{width:`${total ? 100*g.count/total : 0}%`}}/></div><strong>{g.count}</strong></div>)}</div></Card>
+        <Card title="Platform distribution"><div className="obs-bars">{Object.entries((overview?.platformCounts || {}) as Record<string, number>).sort((a,b)=>b[1]-a[1]).map(([label,count])=><div className="obs-bar-row" key={label}><span>{label}</span><div className="obs-bar-track"><div className="obs-bar-fill platform" style={{width:`${total?count/total*100:0}%`}}/></div><strong>{count}</strong></div>)}{total===0&&<p className="obs-muted">No observations analyzed yet.</p>}</div></Card>
+      </>}
+      {path === '/observatory/brand' && <>
+        <div className="obs-columns"><Card title="Register a brand"><form onSubmit={e => {e.preventDefault();void submit(() => obs('/brands', {name:brandName}), 'Brand registered in the database. Its details are not listed here.').then(ok=>{if(ok){setAssetBrand(brandName);setBrandName('')}})}}>
+          <Field label="Brand name" value={brandName} onChange={setBrandName} required placeholder="Example: FoodRush"/>
+          <button className="obs-button" disabled={busy}>Create brand</button></form></Card>
+          <Card title="Add an official asset"><form className="obs-form" onSubmit={e=>{e.preventDefault();void submit(()=>obs('/assets',{brandName:assetBrand,platform:assetPlatform,name:assetName,identifier:assetIdentifier,sourceUrl:assetUrl,username:assetUsername,publisher:assetPublisher,description:assetDescription,logo:assetLogo}),'Official asset saved. It will be used automatically during analysis.').then(ok=>{if(ok){setAssetBrand('');setAssetPlatform('');setAssetName('');setAssetIdentifier('');setAssetUrl('');setAssetUsername('');setAssetPublisher('');setAssetDescription('');setAssetLogo('')}})}}>
+            <Field label="Brand name" value={assetBrand} onChange={setAssetBrand} required placeholder="Registered brand name"/>
+            <Field label="Platform (type any platform)" value={assetPlatform} onChange={setAssetPlatform} required placeholder="Instagram, Facebook, Google Play…"/>
+            <Field label="Asset name" value={assetName} onChange={setAssetName} required/>
+            <Field label="Stable identifier" value={assetIdentifier} onChange={setAssetIdentifier} required/>
+            <Field label="Official URL" value={assetUrl} onChange={setAssetUrl} required placeholder="https://…"/>
+            <Field label="Username (optional)" value={assetUsername} onChange={setAssetUsername}/>
+            <Field label="Publisher (optional)" value={assetPublisher} onChange={setAssetPublisher}/>
+            <Field label="Description (optional)" value={assetDescription} onChange={setAssetDescription}/>
+            <Field label="Logo URL (optional)" value={assetLogo} onChange={setAssetLogo}/>
+            <button className="obs-button" disabled={busy}>Save official asset</button>
+          </form></Card></div>
+        <p className="obs-muted">Registered reference data is stored in PostgreSQL and used for internal comparisons. It is intentionally not listed here. The current prototype still requires authentication before real brand data should be stored.</p>
+      </>}
+      {path === '/observatory/monitor' && <>
+        <Card title="Analyze a social account, app, or URL">
+          <p className="obs-muted">Paste a URL to check it against internally registered brands. You do not need to select an official page. Additional information is optional and improves the assessment; the app does not fetch live account data.</p>
+          <form className="obs-form" onSubmit={e=>{e.preventDefault();setResult(null);submit(async()=>{const r=await obs<AnalysisResult>('/analyze',{sourceUrl,platform,name,username,publisher,description,outboundUrl,synthetic});setResult(r)},'Current analysis completed and saved to PostgreSQL.')}}>
+            <Field label="URL to analyze" value={sourceUrl} onChange={setSourceUrl} required placeholder="https://www.instagram.com/suspicious_account/"/>
+            <Field label="Platform (optional — detected from URL)" value={platform} onChange={setPlatform} placeholder="Automatically detected"/>
+            <Field label="Account or app name (optional)" value={name} onChange={setName}/>
+            <Field label="Username (optional)" value={username} onChange={setUsername}/>
+            <Field label="Publisher (optional)" value={publisher} onChange={setPublisher}/>
+            <Field label="Description or reported message (optional)" value={description} onChange={setDescription}/>
+            <Field label="Outbound link (optional)" value={outboundUrl} onChange={setOutboundUrl}/>
+            <label className="obs-check"><input type="checkbox" checked={synthetic} onChange={e=>setSynthetic(e.target.checked)}/> This is synthetic demonstration data</label>
+            <button className="obs-button" disabled={busy}>{busy?'Analyzing…':'Analyze risk'}</button>
+          </form>
+        </Card>
+        {result&&<Card title="Risk analysis result"><ScorePanel result={result}/></Card>}
+      </>}
+    </div>
+  </ConsoleShell>
+}

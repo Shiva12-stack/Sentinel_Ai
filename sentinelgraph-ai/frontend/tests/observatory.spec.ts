@@ -1,13 +1,23 @@
 import { test, expect } from '@playwright/test'
-// Real Java API required. No route mocks or invented API responses.
-const api='http://localhost:8080/api/v1/observatory'
-test.beforeEach(async({request})=>{const r=await request.get(api);expect(r.ok(),'Start PostgreSQL and Java API before browser tests').toBeTruthy()})
-test('overview shows coverage and transparent exposure formula',async({page})=>{await page.goto('/observatory');await expect(page.getByText('See the signal.')).toBeVisible();await expect(page.getByText('Live score: UNAVAILABLE',{exact:false})).toBeVisible();await page.getByText('Show scoring formula and coverage').click();await expect(page.getByText('configuredLiveSources',{exact:false})).toBeVisible()})
-test('brand and official asset creation',async({page})=>{await page.goto('/observatory/brand');const form=page.getByRole('heading',{name:'Register a brand'}).locator('..');await form.getByLabel('Brand name').fill('Browser Brand '+Date.now());await form.getByRole('button',{name:'Create brand'}).click();await expect(page.getByRole('status')).toContainText('Brand registered');const asset=page.getByRole('heading',{name:'Add an official asset'}).locator('..');await asset.getByLabel('Name',{exact:true}).fill('NovaBank Browser Official');await asset.getByLabel('Stable identifier').fill('browser-official-'+Date.now());await asset.getByLabel('Source URL').fill('https://official.example/profile');await asset.getByRole('button',{name:'Save official asset'}).click();await expect(page.getByRole('status')).toContainText('Official asset saved')})
-test('manual backend test explains homoglyphs and exclusion',async({page})=>{await page.goto('/observatory/test');await page.getByLabel('Candidate name',{exact:true}).fill('NоvaBank');await page.getByRole('button',{name:'Run similarity test'}).click();await expect(page.getByText('100%',{exact:true})).toBeVisible();await expect(page.getByRole('cell',{name:'U+043E',exact:true})).toBeVisible();await page.getByLabel('Stable identifier (optional)').fill('novabank-official');await page.getByRole('button',{name:'Run similarity test'}).click();await expect(page.getByText('Official exclusion: true',{exact:false})).toBeVisible()})
-test('comparison highlights differences and opens investigations',async({page})=>{await page.goto('/observatory/compare');await page.getByRole('button',{name:'Compare evidence'}).click();await expect(page.getByRole('columnheader',{name:'Suspected'})).toBeVisible();await expect(page.getByRole('cell',{name:'Different',exact:true}).first()).toBeVisible();await page.getByRole('link',{name:'Open analyst workspace'}).click();await expect(page).toHaveURL(/cases/)})
-test('import observation then history shows changed metadata',async({page})=>{const stable='browser-history-'+Date.now();await page.goto('/observatory/monitor');await page.getByLabel('Name',{exact:true}).fill('NovaBank Support');await page.getByLabel('Stable identifier',{exact:true}).fill(stable);await page.getByLabel('Source URL',{exact:true}).fill('https://candidate.example/profile');await page.getByRole('button',{name:'Run backend detection'}).click();await expect(page.getByRole('status')).toContainText('processed');await page.getByLabel('Name',{exact:true}).fill('NovaBank Changed');await page.getByRole('button',{name:'Run backend detection'}).click();await expect(page.getByRole('status')).toContainText('processed');await page.goto('/observatory/history');await expect(page.getByText('CHANGED',{exact:true}).first()).toBeVisible();await expect(page.getByText('NovaBank Changed',{exact:true}).first()).toBeVisible()})
-test('evidence locker keeps attribution and no invented screenshots',async({page})=>{await page.goto('/observatory/evidence');await page.locator('summary').first().click();await expect(page.locator('.obs-json').first()).toContainText('capturedAt');await expect(page.locator('.obs-json').first()).toContainText('SYNTHETIC');await expect(page.locator('.obs-json').first()).toContainText('UNAVAILABLE')})
-test('clustering explains supporting indicators without ownership assertion',async({page})=>{await page.goto('/observatory/clusters');await expect(page.getByText('Same supplied contact: help@reward.example',{exact:false})).toBeVisible();await expect(page.getByText('common ownership unproven',{exact:false})).toBeVisible()})
-test('analyst feedback and case evidence export',async({page})=>{await page.goto('/observatory/cases');const feedback=page.getByRole('heading',{name:'Record an analyst decision'}).locator('..');await feedback.getByLabel('Decision',{exact:true}).selectOption('CONFIRMED');await feedback.getByLabel('Reason / investigation note').fill('Browser test analyst review');await feedback.getByRole('button',{name:'Save analyst feedback'}).click();await expect(page.getByRole('status')).toContainText('Decision recorded');await page.getByRole('button',{name:'Create investigation case'}).click();await expect(page.getByRole('status')).toContainText('Investigation created');const pending=page.waitForEvent('download');await page.getByRole('button',{name:'Export evidence report'}).last().click();expect((await pending).suggestedFilename()).toContain('evidence-report.json')})
-test('guided reset requires phrase and preserves user record',async({page,request})=>{const create=await request.post(api+'/brands',{data:{name:'Reset protected '+Date.now()}});const brand=await create.json();await page.goto('/observatory/reset');await expect(page.getByRole('button',{name:'Reset designated demo seeds'})).toBeDisabled();await page.getByLabel('Type RESET SYNTHETIC DEMO').fill('RESET SYNTHETIC DEMO');await page.getByRole('button',{name:'Reset designated demo seeds'}).click();await expect(page.getByRole('status')).toContainText('preserved');const data=await (await request.get(api)).json();expect(data.brands.some((b:any)=>b.id===brand.id)).toBeTruthy()})
+
+test('observatory has only three navigation tabs and aggregate charts', async ({page}) => {
+ await page.goto('/observatory')
+ await expect(page.getByRole('link', {name:'Brand assets'})).toBeVisible()
+ await expect(page.getByRole('link', {name:'Social & apps'})).toBeVisible()
+ await expect(page.getByText('Risk distribution dashboard')).toBeVisible()
+ await expect(page.getByText('Prioritized observation queue')).toHaveCount(0)
+ await expect(page.getByText('Demo reset')).toHaveCount(0)
+})
+test('brand references are not displayed after registration', async ({page}) => {
+ await page.goto('/observatory/brand')
+ await expect(page.getByText('Reference registry')).toHaveCount(0)
+ await expect(page.getByLabel('Platform (type any platform)')).toBeVisible()
+})
+test('social analysis requires a URL but does not require an official brand selection', async ({page}) => {
+ await page.goto('/observatory/monitor')
+ await expect(page.getByLabel('URL to analyze')).toBeVisible()
+ await expect(page.getByRole('button', {name:'Analyze risk'})).toBeVisible()
+ await expect(page.getByLabel('Brand', {exact: true})).toHaveCount(0)
+ await expect(page.locator('.obs-json')).toHaveCount(0)
+ await expect(page.getByText('Social & app findings')).toHaveCount(0)
+})

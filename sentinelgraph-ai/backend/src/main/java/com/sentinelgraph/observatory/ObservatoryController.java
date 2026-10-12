@@ -9,6 +9,7 @@ public class ObservatoryController {
  @PostMapping("/brands") public Map<String,Object> brand(@RequestBody Map<String,Object> body){return service.brand(body);}
  @PostMapping("/assets") public Map<String,Object> asset(@RequestBody Map<String,Object> body){return service.asset(body);}
  @PostMapping("/test") public Map<String,Object> test(@RequestBody Map<String,Object> body){return service.test(body);}
+ @PostMapping("/analyze") public Map<String,Object> autoAnalyze(@RequestBody Map<String,Object> body){return service.analyzeSubmitted(body);}
  @PostMapping("/scans") public Map<String,Object> scan(@RequestBody Map<String,Object> body){return service.scan(body);}
  @GetMapping("/evidence") public List<Map<String,Object>> evidence(){return service.list("evidence");}
  @GetMapping("/history") public List<Map<String,Object>> history(){return service.list("evidence");}
