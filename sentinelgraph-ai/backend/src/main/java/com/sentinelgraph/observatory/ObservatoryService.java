@@ -3,6 +3,8 @@ package com.sentinelgraph.observatory;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Autowired;
+import com.sentinelgraph.service.UrlRiskEngine;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
@@ -12,8 +14,12 @@ import java.util.*;
 
 @Service @Transactional
 public class ObservatoryService {
- private final RecordStore store; private final ObjectMapper json;
- public ObservatoryService(RecordStore store,ObjectMapper json){this.store=store;this.json=json;}
+ private final RecordStore store; private final ObjectMapper json; private final UrlRiskEngine urlRisk;
+ @Autowired public ObservatoryService(RecordStore store,ObjectMapper json,UrlRiskEngine urlRisk){
+  this.store=store;this.json=json;this.urlRisk=urlRisk;
+ }
+ // Preserve the original constructor for existing manual tests and integrations.
+ public ObservatoryService(RecordStore store,ObjectMapper json){this(store,json,null);}
  private String now(){return Instant.now().toString();}
  private String id(String prefix){return prefix+"-"+UUID.randomUUID();}
  private Map<String,Object> unpack(RecordDocument r){try{return json.readValue(r.payload,new TypeReference<LinkedHashMap<String,Object>>(){});}catch(Exception e){throw new IllegalStateException(e);}}
@@ -45,7 +51,10 @@ public class ObservatoryService {
   boolean exact=list("asset").stream().anyMatch(a->brand.equalsIgnoreCase(String.valueOf(get(String.valueOf(a.get("brandId")),"brand").get("name")))&&text(input,"platform").equals(a.get("platform"))&&text(input,"identifier").equals(a.get("identifier"))&&!text(input,"identifier").isEmpty());
   result.put("mode","MANUAL_TEST — not a monitoring result");result.put("officialExcluded",exact);result.put("safeguards",List.of("Official exclusion requires matching platform and stable identifier","Short names (<4 normalized characters) require extra evidence","Name similarity is a candidate signal, not proof of maliciousness","No record or finding is created by a manual test"));return result;
  }
- private Map<String,Object> risk(Map<String,Object> c){Map<String,Object> brand=get(text(c,"brandId"),"brand");Map<String,Object> sim=Similarity.compare(text(brand,"name"),text(c,"name"));boolean excluded=list("asset").stream().anyMatch(a->text(c,"brandId").equals(a.get("brandId"))&&text(c,"platform").equals(a.get("platform"))&&(text(c,"identifier").equals(a.get("identifier"))||text(c,"sourceUrl").replaceAll("/+$","").equalsIgnoreCase(text(a,"sourceUrl").replaceAll("/+$",""))));
+ private Map<String,Object> risk(Map<String,Object> c){Map<String,Object> brand=get(text(c,"brandId"),"brand");Map<String,Object> sim=Similarity.compare(text(brand,"name"),text(c,"name"));boolean excluded=list("asset").stream().anyMatch(a->text(c,"brandId").equals(a.get("brandId"))
+   &&(text(c,"platform").equalsIgnoreCase(text(a,"platform"))
+      ||("Website / other".equalsIgnoreCase(text(c,"platform"))&&"Website".equalsIgnoreCase(text(a,"platform"))))
+   &&(text(c,"identifier").equals(a.get("identifier"))||text(c,"sourceUrl").replaceAll("/+$","").equalsIgnoreCase(text(a,"sourceUrl").replaceAll("/+$",""))));
   List<Map<String,Object>> signals=new ArrayList<>();double similarity=((Number)sim.get("similarity")).doubleValue();boolean added=Boolean.TRUE.equals(sim.get("addedWords"));int score=0;
   if(Similarity.normalize(text(brand,"name")).length()>=4&&(similarity>=70||added)){int points=(int)Math.round(40*(added?Math.max(similarity,80):similarity)/100);score+=points;signals.add(Map.of("signal","Name resemblance","points",points,"detail",sim));}
   List<Map<String,Object>> assets=list("asset").stream().filter(a->text(c,"brandId").equals(a.get("brandId"))).toList();
@@ -161,60 +170,34 @@ public class ObservatoryService {
    assessment.put("signals",signals);
    assessment.put("missing",List.of("No matching registered brand","No live account inspection","No external reputation verification"));
   }
-  // Additional offline website-hostname indicators for the submitted URL.
-  // Official matches are excluded from these warnings. These points indicate
-  // patterns for an analyst to review; they are NOT a probability of fraud.
-  if("Website / other".equalsIgnoreCase(platform)
+  String urlMatchedBrand=null;
+  // For submitted website URLs, reuse the same hostname/brand/reputation engine as
+  // URL Analysis; no selection of a brand is required and the destination is not fetched.
+  if("Website / other".equalsIgnoreCase(platform)&&urlRisk!=null
       && !Boolean.TRUE.equals(assessment.get("officialExcluded"))){
-   String[] labels=host.split("\\.");
-   boolean loginLabel=Arrays.stream(labels).anyMatch(label ->
-       label.matches("(?i).*(login|signin|verify|secure|account|password|otp).*"));
-   boolean digitInSubdomain=false;
-   for(int i=0;i<labels.length-2;i++){
-    if(labels[i].matches(".*\\d.*")){digitInSubdomain=true;break;}
-   }
+   UrlRiskEngine.Assessment urlAssessment=urlRisk.assess(source);
+   urlMatchedBrand=urlAssessment.claimedBrand();
+   int original=((Number)assessment.get("score")).intValue();
+   int merged=Math.max(original,urlAssessment.score());
+   List<Map<String,Object>> details=new ArrayList<>();
    @SuppressWarnings("unchecked")
-   List<Map<String,Object>> signals=new ArrayList<>((List<Map<String,Object>>)assessment.get("signals"));
-   int extra=0;
-   if(loginLabel&&digitInSubdomain){
-    extra+=40;
-    signals.add(Map.of("signal","Login-themed host with a digit-containing subdomain",
-        "points",40,"detail","Offline hostname pattern; no site contents inspected"));
-   }
-   if(matched!=null){
-    String brandKey=Similarity.normalize(text(matched,"name"));
-    if(!identity.contains(brandKey)&&visualIdentity.contains(brandKey)){
-     extra+=35;
-     signals.add(Map.of("signal","Digit-substituted resemblance to registered brand",
-         "points",35,"detail","Common visual substitutions in supplied URL/name"));
-    }
-    boolean knownOfficialWebsite=false;
-    boolean matchesOfficialHost=false;
-    for(Map<String,Object> reference:registeredAssets){
-     if(!text(matched,"id").equals(text(reference,"brandId"))
-         ||!"Website".equalsIgnoreCase(text(reference,"platform")))continue;
-     try{
-      URI official=URI.create(text(reference,"sourceUrl"));
-      if(official.getHost()==null)continue;
-      String officialHost=official.getHost().toLowerCase(Locale.ROOT).replaceFirst("^www\\.","");
-      knownOfficialWebsite=true;
-      if(host.equals(officialHost)||host.endsWith("."+officialHost))matchesOfficialHost=true;
-     }catch(IllegalArgumentException ignored){ /* Ignore malformed saved references. */ }
-    }
-    if(knownOfficialWebsite&&!matchesOfficialHost){
-     extra+=20;
-     signals.add(Map.of("signal","Different host from registered official website",
-         "points",20,"detail","Compared hostname to supplied official website reference"));
+   List<Map<String,Object>> originalSignals=(List<Map<String,Object>>)assessment.get("signals");
+   details.addAll(originalSignals);
+   for(com.sentinelgraph.dto.AnalysisDtos.Evidence signal:urlAssessment.evidence()){
+    if("warning".equals(signal.kind())){
+     java.util.regex.Matcher found=java.util.regex.Pattern.compile("rule points: (\\d+)").matcher(signal.description());
+     int points=found.find()?Integer.parseInt(found.group(1)):0;
+     details.add(Map.of("signal",signal.title(),"points",points,"detail",signal.description()));
     }
    }
-   if(extra>0){
-    int newScore=Math.min(100,((Number)assessment.get("score")).intValue()+extra);
-    assessment.put("score",newScore);
-    assessment.put("signals",signals);
-    assessment.put("verdict",newScore>=70?"LIKELY_IMPERSONATION":"SUSPICIOUS");
-    assessment.put("riskLevel",newScore>=70?"HIGH":"MEDIUM");
-    assessment.put("safetyAssessment","POTENTIAL_RISK");
-   }
+   assessment.put("score",merged);
+   assessment.put("signals",details);
+   assessment.put("verdict",merged>=70?"LIKELY_IMPERSONATION":merged>=35?"SUSPICIOUS":
+       urlAssessment.verdict().equals("VERIFIED_REFERENCE_MATCH")?"SUPPLIED_OFFICIAL_ASSET_MATCH":"INCONCLUSIVE");
+   assessment.put("riskLevel",merged>=70?"HIGH":merged>=35?"MEDIUM":"LOW");
+   assessment.put("safetyAssessment",merged>=35?"POTENTIAL_RISK":"NOT_VERIFIED_SAFE");
+   assessment.put("threatStatus",urlAssessment.threatStatus());
+   assessment.put("explanation","Combined metadata and URL structure heuristics (maximum score; not additive). Provider findings are included where configured.");
   }
   c.put("risk",assessment);c.put("analystStatus",decision(candidateId));
   put(candidateId,"candidate",false,c);
@@ -226,7 +209,8 @@ public class ObservatoryService {
   Map<String,Object> response=new LinkedHashMap<>();
   response.put("id",candidateId);response.put("name",name);response.put("sourceUrl",source);
   response.put("platform",platform);response.put("risk",assessment);
-  response.put("matchedBrand",matched==null?"No unambiguous registered match":text(matched,"name"));
+  response.put("matchedBrand",matched!=null?text(matched,"name"):
+      urlMatchedBrand!=null?urlMatchedBrand:"No unambiguous registered match");
   response.put("provenance",provenance);response.put("coverage","Compared submitted metadata with stored references. No website or social account was fetched.");
   return response;
  }

@@ -8,6 +8,7 @@ import com.sentinelgraph.model.InvestigationCase;
 import com.sentinelgraph.repository.AnalysisRepository;
 import com.sentinelgraph.repository.CaseRepository;
 import com.sentinelgraph.service.UrlAnalysisService;
+import com.sentinelgraph.service.UrlThreatIntelligence;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
@@ -24,10 +25,11 @@ public class ApiController {
     private final UrlAnalysisService analysis;
     private final AnalysisRepository analyses;
     private final CaseRepository cases;
-    public ApiController(UrlAnalysisService analysis,AnalysisRepository analyses,CaseRepository cases){
-        this.analysis=analysis;this.analyses=analyses;this.cases=cases;
+    private final UrlThreatIntelligence intelligence;
+    public ApiController(UrlAnalysisService analysis,AnalysisRepository analyses,CaseRepository cases,UrlThreatIntelligence intelligence){
+        this.analysis=analysis;this.analyses=analyses;this.cases=cases;this.intelligence=intelligence;
     }
-    @GetMapping("/health") public Map<String,Object> health(){return Map.of("status","UP","mode","OFFLINE_URL_ANALYSIS","realWebsiteInspection",false);}
+    @GetMapping("/health") public Map<String,Object> health(){return Map.of("status","UP","mode","URL_HEURISTICS_OPTIONAL_REPUTATION","realWebsiteInspection",false);}
     @PostMapping("/analyze/url") public AnalysisResponse analyze(@Valid @RequestBody AnalyzeRequest request){return analysis.analyze(request.url());}
     @GetMapping("/analyses/{id}") public AnalysisResponse one(@PathVariable String id){return analysis.findById(id);}
     @GetMapping("/findings") public List<AnalysisResponse> findings(){return analysis.findAll();}
@@ -55,6 +57,6 @@ public class ApiController {
         InvestigationCase item=cases.findById(id).orElseThrow(()->new ResponseStatusException(HttpStatus.NOT_FOUND,"Case not found"));
         item.setStatus(status);return cases.save(item);
     }
-    @GetMapping("/status/sources") public Map<String,Object> sources(){return Map.of("connectedSources",0,"externalIntelligence","NOT_CONFIGURED","websiteInspection","DISABLED");}
+    @GetMapping("/status/sources") public Map<String,Object> sources(){return intelligence.sourceStatus();}
     @GetMapping("/discovery/candidates") public Map<String,Object> discoveries(){return Map.of("candidates",List.of(),"status","NO_LIVE_FEEDS","message","Discovery feeds are not connected in this starter.");}
 }

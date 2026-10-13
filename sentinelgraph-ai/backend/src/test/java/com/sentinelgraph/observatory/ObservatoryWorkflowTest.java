@@ -46,6 +46,12 @@ class ObservatoryWorkflowTest {
   var again=service.analyzeSubmitted(Map.of("sourceUrl","https://www.instagram.com/foodrushtesting_reward_demo/","name","FoodRush Testing Claim Reward","synthetic",true));
   assertEquals(result.get("id"),again.get("id"));
  }
+ @Test void unknownWebsiteCanStillMatchBuiltInBrandLookalike(){
+  var result=service.analyzeSubmitted(Map.of("sourceUrl","https://www.amazon.login.page.in","synthetic",true));
+  assertEquals("Amazon",result.get("matchedBrand"));
+  assertTrue(((Number)((Map<?,?>)result.get("risk")).get("score")).intValue()>=70);
+  assertEquals("LIKELY_IMPERSONATION",((Map<?,?>)result.get("risk")).get("verdict"));
+ }
  @Test void unknownReferenceDoesNotClaimVerifiedSafety(){
   var result=service.analyzeSubmitted(Map.of("sourceUrl","https://no-brand-reference.example/unknown","synthetic",true));
   assertEquals("No unambiguous registered match",result.get("matchedBrand"));
