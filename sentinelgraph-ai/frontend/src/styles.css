@@ -73,3 +73,32 @@
 .obs-score-panel.obs-uncertain{background:#f8f7f1;color:#504d40}
 .obs-score-identity{font-size:16px!important;text-align:center;color:#5b4d40;margin:0 0 20px!important}
 @media(max-width:600px){.sg-analysis-risk-card{padding:20px 12px}.sg-risk-gauge__number{font-size:71px}.sg-risk-gauge__badge{font-size:12px}.sg-inline-risk{font-size:12px}.sg-risk-gauge--compact{min-width:90px}.sg-risk-gauge--compact .sg-risk-gauge__visual{width:100px}}
+
+/* Entry-only slide/fade for the three pictured Home sections; the 3D hero is not affected. */
+.how-section .step-card b.sg-home-reveal { display: inline-block; }
+@media (prefers-reduced-motion: no-preference) {
+  .feature-section .sg-home-reveal,
+  .how-section .sg-home-reveal,
+  .last-cta .sg-home-reveal {
+    opacity: 0;
+    transform: translate3d(-40px, 0, 0);
+    transition-property: opacity, transform;
+    transition-duration: 700ms;
+    transition-timing-function: ease-out;
+  }
+  .feature-section .sg-home-reveal.sg-home-reveal--visible,
+  .how-section .sg-home-reveal.sg-home-reveal--visible,
+  .last-cta .sg-home-reveal.sg-home-reveal--visible {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .feature-section .sg-home-reveal,
+  .how-section .sg-home-reveal,
+  .last-cta .sg-home-reveal {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+}
