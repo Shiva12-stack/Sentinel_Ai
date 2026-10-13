@@ -88,7 +88,6 @@ export default function Observatory() {
   const selected = tabs.find(t => t.url === path) || tabs[0]
   return <ConsoleShell title={selected.label === 'Overview' ? 'Threat Observatory' : selected.label} subtitle="Digital Threat Observatory · brand identity and risk signals">
     <div className="obs">
-      <div className="obs-source"><span className="obs-pulse"/> JAVA API + POSTGRESQL <span>Submitted metadata only · no live social or app-store inspection</span></div>
       <nav className="obs-tabs">{tabs.map(({url, label, icon: Icon}) => <Link key={url} to={url} className={selected.url === url ? 'selected' : ''}><Icon size={15}/>{label}</Link>)}</nav>
       {error && <div role="alert" className="obs-error">{error}</div>}
       {message && <div role="status" className="obs-notice"><CheckCircle2 size={17}/>{message}</div>}

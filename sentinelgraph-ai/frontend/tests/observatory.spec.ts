@@ -21,3 +21,20 @@ test('social analysis requires a URL but does not require an official brand sele
  await expect(page.locator('.obs-json')).toHaveCount(0)
  await expect(page.getByText('Social & app findings')).toHaveCount(0)
 })
+
+test('removed console navigation, Java status label and demo switch are hidden', async ({page}) => {
+ await page.goto('/observatory')
+ const sidebar = page.locator('aside.sidebar')
+ for (const name of ['Discovery Center', 'Findings Explorer', 'Relationship Graph', 'Investigations', 'Alerts']) {
+  await expect(sidebar.getByRole('link', {name})).toHaveCount(0)
+ }
+ await expect(page.getByText('JAVA API + POSTGRESQL')).toHaveCount(0)
+ await expect(page.getByText('JAVA API MODE', {exact:false})).toHaveCount(0)
+ await expect(page.getByRole('button', {name:/Switch to local demo/i})).toHaveCount(0)
+ await expect(sidebar.getByRole('link', {name:'Reports'})).toBeVisible()
+})
+
+test('removed console routes redirect to overview', async ({page}) => {
+ await page.goto('/discovery')
+ await expect(page).toHaveURL(/\/dashboard$/)
+})

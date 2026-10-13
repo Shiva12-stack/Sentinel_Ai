@@ -1,10 +1,11 @@
 import type { Analysis, DashboardStats, CaseItem } from './types'
+import { backendApiUrl } from './backendUrl'
 import { getDemoAnalyses, getDemoAnalysis, saveDemoAnalysis, getDemoStats, getDemoCases, saveDemoCase } from './demo'
 const MODE_KEY='sentinelgraph_use_backend'
-export const useBackend = () => localStorage.getItem(MODE_KEY)!=='false'
+export const useBackend = () => true
 export const setBackendMode = (enabled:boolean) => {localStorage.setItem(MODE_KEY,String(enabled));window.dispatchEvent(new Event('sentinelgraph-mode'))}
 async function request<T>(path:string,init?:RequestInit):Promise<T>{
-  const response=await fetch(`/api/v1${path}`,{...init,headers:{'Content-Type':'application/json',...(init?.headers||{})}})
+  const response=await fetch(backendApiUrl(`/api/v1${path}`),{...init,headers:{'Content-Type':'application/json',...(init?.headers||{})}})
   if(!response.ok){let detail='The server could not process this request.';try{const body=await response.json();detail=body.message||detail}catch{};throw new Error(detail)}
   return response.json() as Promise<T>
 }
