@@ -74,9 +74,10 @@
 .obs-score-identity{font-size:16px!important;text-align:center;color:#5b4d40;margin:0 0 20px!important}
 @media(max-width:600px){.sg-analysis-risk-card{padding:20px 12px}.sg-risk-gauge__number{font-size:71px}.sg-risk-gauge__badge{font-size:12px}.sg-inline-risk{font-size:12px}.sg-risk-gauge--compact{min-width:90px}.sg-risk-gauge--compact .sg-risk-gauge__visual{width:100px}}
 
-/* Entry-only slide/fade for the three pictured Home sections; the 3D hero is not affected. */
+/* Entry-only slide/fade for the four requested Home sections; the 3D hero is not affected. */
 .how-section .step-card b.sg-home-reveal { display: inline-block; }
 @media (prefers-reduced-motion: no-preference) {
+  .verification-section .sg-home-reveal,
   .feature-section .sg-home-reveal,
   .how-section .sg-home-reveal,
   .last-cta .sg-home-reveal {
@@ -86,6 +87,7 @@
     transition-duration: 700ms;
     transition-timing-function: ease-out;
   }
+  .verification-section .sg-home-reveal.sg-home-reveal--visible,
   .feature-section .sg-home-reveal.sg-home-reveal--visible,
   .how-section .sg-home-reveal.sg-home-reveal--visible,
   .last-cta .sg-home-reveal.sg-home-reveal--visible {
@@ -94,6 +96,7 @@
   }
 }
 @media (prefers-reduced-motion: reduce) {
+  .verification-section .sg-home-reveal,
   .feature-section .sg-home-reveal,
   .how-section .sg-home-reveal,
   .last-cta .sg-home-reveal {
@@ -102,3 +105,8 @@
     transition: none;
   }
 }
+
+/* Saved assessment count graph (replaces horizontal assessment bars). */
+.sg-assessment-graph{height:310px;min-height:245px;width:100%;padding:10px 18px 24px}
+.sg-chart-loading{padding:60px 20px;text-align:center;color:#a99477;font-size:13px}
+@media(max-width:680px){.sg-assessment-graph{height:265px;padding:9px 6px 19px}}
