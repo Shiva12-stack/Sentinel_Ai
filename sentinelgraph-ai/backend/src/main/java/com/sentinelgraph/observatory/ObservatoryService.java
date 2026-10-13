@@ -112,6 +112,9 @@ public class ObservatoryService {
   if(name.isEmpty())name=host;
   if(name.length()>250||username.length()>250)throw bad("Name or username too long",HttpStatus.BAD_REQUEST);
   String identity=Similarity.normalize(name+" "+username+" "+host);
+  // Compare common digit lookalikes as well as the literal supplied name.
+  // This is an offline resemblance signal, not proof of ownership or fraud.
+  String visualIdentity=identity.replace('0','o').replace('1','l').replace('3','e').replace('5','s');
   Map<String,Object> matched=null;int best=0;boolean ambiguous=false;
   List<Map<String,Object>> registeredAssets=list("asset");
   String cleanUrl=source.replaceAll("/+$","").toLowerCase(Locale.ROOT);
@@ -119,7 +122,7 @@ public class ObservatoryService {
    String brandKey=Similarity.normalize(text(brand,"name"));
    if(brandKey.length()<4)continue;
    boolean officialUrl=registeredAssets.stream().anyMatch(a->text(brand,"id").equals(a.get("brandId"))&&cleanUrl.equals(text(a,"sourceUrl").replaceAll("/+$","").toLowerCase(Locale.ROOT)));
-   boolean similar=identity.contains(brandKey);
+   boolean similar=identity.contains(brandKey)||visualIdentity.contains(brandKey);
    if(!officialUrl&&!similar)continue;
    int confidence=(officialUrl?10000:0)+brandKey.length();
    if(confidence>best){best=confidence;matched=brand;ambiguous=false;}
@@ -157,6 +160,61 @@ public class ObservatoryService {
    assessment.put("safetyAssessment","NOT_VERIFIED_SAFE");assessment.put("officialExcluded",false);
    assessment.put("signals",signals);
    assessment.put("missing",List.of("No matching registered brand","No live account inspection","No external reputation verification"));
+  }
+  // Additional offline website-hostname indicators for the submitted URL.
+  // Official matches are excluded from these warnings. These points indicate
+  // patterns for an analyst to review; they are NOT a probability of fraud.
+  if("Website / other".equalsIgnoreCase(platform)
+      && !Boolean.TRUE.equals(assessment.get("officialExcluded"))){
+   String[] labels=host.split("\\.");
+   boolean loginLabel=Arrays.stream(labels).anyMatch(label ->
+       label.matches("(?i).*(login|signin|verify|secure|account|password|otp).*"));
+   boolean digitInSubdomain=false;
+   for(int i=0;i<labels.length-2;i++){
+    if(labels[i].matches(".*\\d.*")){digitInSubdomain=true;break;}
+   }
+   @SuppressWarnings("unchecked")
+   List<Map<String,Object>> signals=new ArrayList<>((List<Map<String,Object>>)assessment.get("signals"));
+   int extra=0;
+   if(loginLabel&&digitInSubdomain){
+    extra+=40;
+    signals.add(Map.of("signal","Login-themed host with a digit-containing subdomain",
+        "points",40,"detail","Offline hostname pattern; no site contents inspected"));
+   }
+   if(matched!=null){
+    String brandKey=Similarity.normalize(text(matched,"name"));
+    if(!identity.contains(brandKey)&&visualIdentity.contains(brandKey)){
+     extra+=35;
+     signals.add(Map.of("signal","Digit-substituted resemblance to registered brand",
+         "points",35,"detail","Common visual substitutions in supplied URL/name"));
+    }
+    boolean knownOfficialWebsite=false;
+    boolean matchesOfficialHost=false;
+    for(Map<String,Object> reference:registeredAssets){
+     if(!text(matched,"id").equals(text(reference,"brandId"))
+         ||!"Website".equalsIgnoreCase(text(reference,"platform")))continue;
+     try{
+      URI official=URI.create(text(reference,"sourceUrl"));
+      if(official.getHost()==null)continue;
+      String officialHost=official.getHost().toLowerCase(Locale.ROOT).replaceFirst("^www\\.","");
+      knownOfficialWebsite=true;
+      if(host.equals(officialHost)||host.endsWith("."+officialHost))matchesOfficialHost=true;
+     }catch(IllegalArgumentException ignored){ /* Ignore malformed saved references. */ }
+    }
+    if(knownOfficialWebsite&&!matchesOfficialHost){
+     extra+=20;
+     signals.add(Map.of("signal","Different host from registered official website",
+         "points",20,"detail","Compared hostname to supplied official website reference"));
+    }
+   }
+   if(extra>0){
+    int newScore=Math.min(100,((Number)assessment.get("score")).intValue()+extra);
+    assessment.put("score",newScore);
+    assessment.put("signals",signals);
+    assessment.put("verdict",newScore>=70?"LIKELY_IMPERSONATION":"SUSPICIOUS");
+    assessment.put("riskLevel",newScore>=70?"HIGH":"MEDIUM");
+    assessment.put("safetyAssessment","POTENTIAL_RISK");
+   }
   }
   c.put("risk",assessment);c.put("analystStatus",decision(candidateId));
   put(candidateId,"candidate",false,c);
